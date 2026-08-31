@@ -32,6 +32,13 @@ func TestCreateSQL(t *testing.T) {
 	}
 }
 
+func TestCreateRoleSQL(t *testing.T) {
+	if got := createRoleSQL("app", "s3cret", CreateRoleOptions{CreateDB: true, GrantDB: "appdb"});
+		got != `CREATE ROLE "app" LOGIN PASSWORD 's3cret' CREATEDB` {
+		t.Errorf("got %s", got)
+	}
+}
+
 func TestSystemDatabase(t *testing.T) {
 	for _, d := range []string{"postgres", "template0", "template1"} {
 		if !systemDBs[d] {

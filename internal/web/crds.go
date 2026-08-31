@@ -11,17 +11,18 @@ import (
 
 // validCRDKind rejects unknown kinds (400). ClusterImageCatalog is cluster-scoped
 // yet still a valid kind; CRDGVR's whitelist covers it, so this is the single guard.
-func validCRDKind(w http.ResponseWriter, kind string) bool {
-	if _, err := kube.CRDGVR(kind); err != nil {
+func validCRDKind(w http.ResponseWriter, kind string) (schema.GroupVersionResource, bool) {
+	gvr, err := kube.CRDGVR(kind)
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
-		return false
+		return schema.GroupVersionResource{}, false
 	}
-	return true
+	return gvr, true
 }
 
 func (h *api) listCRDs(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
-	if !validCRDKind(w, kind) {
+	if _, ok := validCRDKind(w, kind); !ok {
 		return
 	}
 	items, err := h.cs.ListCRD(r.Context(), kind, r.URL.Query().Get("ns"))
@@ -52,7 +53,8 @@ type crdCreateReq struct {
 
 func (h *api) createCRD(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
-	if !validCRDKind(w, kind) {
+	gvr, ok := validCRDKind(w, kind)
+	if !ok {
 		return
 	}
 	var in crdCreateReq
@@ -69,7 +71,6 @@ func (h *api) createCRD(w http.ResponseWriter, r *http.Request) {
 	if in.Spec != nil {
 		obj.Object["spec"] = in.Spec
 	}
-	gvr, _ := kube.CRDGVR(kind)
 	gv := schema.GroupVersion{Group: gvr.Group, Version: gvr.Version}
 	obj.SetGroupVersionKind(gv.WithKind(kind))
 	if err := h.cs.CreateCRD(r.Context(), kind, r.URL.Query().Get("ns"), obj); err != nil {
@@ -81,7 +82,7 @@ func (h *api) createCRD(w http.ResponseWriter, r *http.Request) {
 
 func (h *api) updateCRD(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
-	if !validCRDKind(w, kind) {
+	if _, ok := validCRDKind(w, kind); !ok {
 		return
 	}
 	var body map[string]any
@@ -99,7 +100,7 @@ func (h *api) updateCRD(w http.ResponseWriter, r *http.Request) {
 
 func (h *api) patchCRD(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
-	if !validCRDKind(w, kind) {
+	if _, ok := validCRDKind(w, kind); !ok {
 		return
 	}
 	var patch map[string]any
@@ -116,7 +117,7 @@ func (h *api) patchCRD(w http.ResponseWriter, r *http.Request) {
 
 func (h *api) deleteCRD(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
-	if !validCRDKind(w, kind) {
+	if _, ok := validCRDKind(w, kind); !ok {
 		return
 	}
 	if err := h.cs.DeleteCRD(r.Context(), kind, r.URL.Query().Get("ns"), r.PathValue("name")); err != nil {

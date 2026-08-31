@@ -181,8 +181,8 @@ func TestGetClusterAmbiguous(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/clusters/pg1", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != 409 {
-		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != 400 {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

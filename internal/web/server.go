@@ -132,7 +132,7 @@ func (h *api) writeError(w http.ResponseWriter, err error) {
 	case errNotFound:
 		writeErr(w, http.StatusNotFound, e.Error())
 	case errAmbiguous:
-		writeErr(w, http.StatusConflict, e.Error())
+		writeErr(w, http.StatusBadRequest, e.Error())
 	case *pg.PGError:
 		// 3D000 = invalid_catalog_name (cluster db doesn't exist) -> 404; DB errors -> 400.
 		if e.Code == "3D000" {

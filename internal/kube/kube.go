@@ -10,8 +10,8 @@ import (
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -300,44 +300,26 @@ func (k *Client) DeleteDatabase(ctx context.Context, cl *apiv1.Cluster, name str
 }
 
 func (k *Client) CreateManagedRole(ctx context.Context, cl *apiv1.Cluster, name, secretName string, super, createDB bool) error {
-	cur, err := k.GetCluster(ctx, cl.Namespace, cl.Name)
-	if err != nil {
-		return err
+	obj := &unstructured.Unstructured{}
+	obj.SetName(name)
+	obj.SetNamespace(cl.Namespace)
+	obj.SetAPIVersion(crdGroup + "/" + crdVersion)
+	obj.SetKind("DatabaseRole")
+	obj.Object["spec"] = map[string]any{
+		"cluster":                   map[string]any{"name": cl.Name},
+		"name":                      name,
+		"login":                     true,
+		"superuser":                 super,
+		"createdb":                  createDB,
+		"ensure":                    "present",
+		"passwordSecret":            map[string]any{"name": secretName},
+		"databaseRoleReclaimPolicy": "delete",
 	}
-	if cur.Spec.Managed == nil {
-		cur.Spec.Managed = &apiv1.ManagedConfiguration{}
-	}
-	for _, r := range cur.Spec.Managed.Roles {
-		if r.Name == name {
-			return nil
-		}
-	}
-	cur.Spec.Managed.Roles = append(cur.Spec.Managed.Roles, apiv1.RoleConfiguration{
-		Name:           name,
-		Login:          true,
-		Superuser:      super,
-		CreateDB:       createDB,
-		PasswordSecret: &apiv1.LocalObjectReference{Name: secretName},
-	})
-	return k.c.Update(ctx, cur)
+	return k.CreateCRD(ctx, "DatabaseRole", cl.Namespace, obj)
 }
 
 func (k *Client) DropManagedRole(ctx context.Context, cl *apiv1.Cluster, name string) error {
-	cur, err := k.GetCluster(ctx, cl.Namespace, cl.Name)
-	if err != nil {
-		return err
-	}
-	if cur.Spec.Managed == nil {
-		return nil
-	}
-	kept := cur.Spec.Managed.Roles[:0]
-	for _, r := range cur.Spec.Managed.Roles {
-		if r.Name != name {
-			kept = append(kept, r)
-		}
-	}
-	cur.Spec.Managed.Roles = kept
-	return k.c.Update(ctx, cur)
+	return k.DeleteCRD(ctx, "DatabaseRole", cl.Namespace, name)
 }
 
 func BackupFor(cl *apiv1.Cluster, name string) *apiv1.Backup {

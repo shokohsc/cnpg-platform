@@ -15,12 +15,49 @@ const newSpec = ref<any>({})
 async function loadList() {
   if (!selected.value) return
   error.value = ''
+  items.value = []
   try {
     items.value = await api.crud.list(selected.value.kind, selected.value.namespaced ? ns.value : '')
     current.value = null
-  } catch (e) { error.value = String(e) }
+  } catch (e) {
+    const msg = String(e)
+    // A kind with nothing to list surfaces as a Kubernetes NotFound/NoMatch;
+    // treat it as an empty list rather than an error.
+    if (/not found|notfound|nomatch|no matches/i.test(msg)) {
+      items.value = []
+    } else {
+      error.value = msg
+    }
+  }
 }
 watch(() => selected.value, loadList)
+
+// Derive a status dot color + hover reason from the CRD's status block.
+function statusOf(it: any): { dot: string; reason: string } {
+  const st = it?.status
+  if (!st) return { dot: 'bg-dim', reason: '' }
+  if (typeof st.applied === 'boolean') {
+    return st.applied
+      ? { dot: 'bg-accent', reason: st.message || 'applied' }
+      : { dot: 'bg-red-400', reason: st.message || 'not applied' }
+  }
+  const phase = st.phase
+  if (phase) {
+    const p = String(phase).toLowerCase()
+    if (p.includes('comp') || p.includes('ready') || p.includes('healthy'))
+      return { dot: 'bg-accent', reason: st.message || phase }
+    if (p.includes('fail') || p.includes('error'))
+      return { dot: 'bg-red-400', reason: st.message || phase }
+    return { dot: 'bg-amber-400', reason: st.message || phase }
+  }
+  if (Array.isArray(st.conditions) && st.conditions.length) {
+    const bad = st.conditions.find((c: any) => c.status === 'False')
+    if (bad) return { dot: 'bg-red-400', reason: bad.message || bad.reason || 'not healthy' }
+    const last = st.conditions[st.conditions.length - 1]
+    return { dot: 'bg-accent', reason: last?.reason || last?.message || 'ready' }
+  }
+  return { dot: 'bg-dim', reason: '' }
+}
 
 async function open(item: any) {
   error.value = ''
@@ -91,10 +128,11 @@ async function create() {
       <div v-if="error" class="text-red-400 text-sm mb-2">{{ error }}</div>
       <ul class="space-y-1">
         <li v-for="it in items" :key="it.metadata?.name">
-          <button class="w-full text-left px-2 py-1 rounded text-sm hover:bg-panel2"
-            @click="open(it)">
-            <span class="font-mono">{{ it.metadata?.name }}</span>
-            <span v-if="it.metadata?.namespace" class="text-dim text-xs ml-1">{{ it.metadata.namespace }}</span>
+          <button class="w-full text-left px-2 py-1 rounded text-sm hover:bg-panel2 flex items-center gap-2"
+            :title="statusOf(it).reason || undefined" @click="open(it)">
+            <span class="w-2 h-2 rounded-full shrink-0" :class="statusOf(it).dot"></span>
+            <span class="font-mono truncate">{{ it.metadata?.name }}</span>
+            <span v-if="it.metadata?.namespace" class="text-dim text-xs ml-auto truncate">{{ it.metadata.namespace }}</span>
           </button>
         </li>
         <li v-if="!items.length" class="text-dim text-sm">No {{ selected?.kind }} found.</li>

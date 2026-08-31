@@ -28,10 +28,10 @@ type clusterView struct {
 	DBError    string `json:"dbError,omitempty"`
 
 	// Configured spec values surfaced for the Overview edit panel.
-	ImageName string        `json:"imageName,omitempty"`
-	Storage   *storageView  `json:"storage,omitempty"`
+	ImageName string         `json:"imageName,omitempty"`
+	Storage   *storageView   `json:"storage,omitempty"`
 	Resources *resourcesView `json:"resources,omitempty"`
-	Postgres  *postgresView `json:"postgresql,omitempty"`
+	Postgres  *postgresView  `json:"postgresql,omitempty"`
 }
 
 type storageView struct {
@@ -84,7 +84,7 @@ func enrich(ctx context.Context, h *api, cl *apiv1.Cluster) clusterView {
 	v := clusterView{
 		Name: cl.Name, Namespace: cl.Namespace, Phase: cl.Status.Phase,
 		Ready: cl.Status.ReadyInstances, Total: cl.Status.Instances,
-		Port: kube.ClusterPort(cl), Version: pgMajorVersion(cl), Databases: -1, Roles: -1,
+		Port: kube.ClusterPort(cl), Version: pgMajorVersion(cl), Databases: 0, Roles: 0,
 		ImageName: cl.Spec.ImageName,
 	}
 	if cl.Spec.StorageConfiguration.Size != "" {

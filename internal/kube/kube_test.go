@@ -151,7 +151,7 @@ func TestListCRDClusterScoped(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "postgresql.cnpg.io", Version: "v1", Kind: "ClusterImageCatalog"})
 	obj.SetName("cat")
-	// Default namespaced client: force all-namespaces list just exercises ns "". 
+	// Default namespaced client: force all-namespaces list just exercises ns "".
 	if err := k.CreateCRD(ctx, "ClusterImageCatalog", "", obj); err != nil {
 		t.Fatal(err)
 	}
@@ -193,34 +193,40 @@ func TestCreateAndDeleteDatabase(t *testing.T) {
 	}
 }
 
-func TestCreateAndDropManagedRole(t *testing.T) {
+func TestCreateAndDropDatabaseRole(t *testing.T) {
 	cl := &apiv1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}}
-	c := schemeBuilder()
+	k := &Client{c: schemeBuilder()}
 	ctx := context.Background()
-	if err := c.Create(ctx, cl); err != nil {
-		t.Fatal(err)
-	}
-	k := &Client{c: c}
 	if err := k.CreateManagedRole(ctx, cl, "app", "pg1-app", false, true); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := k.GetCluster(ctx, "db", "pg1")
-	if got.Spec.Managed == nil || len(got.Spec.Managed.Roles) != 1 {
-		t.Fatalf("managed roles = %+v", got.Spec.Managed)
+	got, err := k.GetCRD(ctx, "DatabaseRole", "db", "app")
+	if err != nil {
+		t.Fatal(err)
 	}
-	r := got.Spec.Managed.Roles[0]
-	if r.Name != "app" || !r.Login || !r.CreateDB || r.Superuser {
-		t.Fatalf("bad role config %+v", r)
+	if spec, _, _ := unstructured.NestedString(got.Object, "spec", "name"); spec != "app" {
+		t.Fatalf("spec.name = %q", spec)
 	}
-	if r.PasswordSecret == nil || r.PasswordSecret.Name != "pg1-app" {
-		t.Fatalf("passwordSecret = %+v", r.PasswordSecret)
+	if l, _, _ := unstructured.NestedBool(got.Object, "spec", "login"); !l {
+		t.Fatal("login should be true")
+	}
+	if cdb, _, _ := unstructured.NestedBool(got.Object, "spec", "createdb"); !cdb {
+		t.Fatal("createdb should be true")
+	}
+	if su, _, _ := unstructured.NestedBool(got.Object, "spec", "superuser"); su {
+		t.Fatal("superuser should be false")
+	}
+	if p, _, _ := unstructured.NestedString(got.Object, "spec", "databaseRoleReclaimPolicy"); p != "delete" {
+		t.Fatalf("reclaim policy = %q, want delete", p)
+	}
+	if sn, _, _ := unstructured.NestedString(got.Object, "spec", "passwordSecret", "name"); sn != "pg1-app" {
+		t.Fatalf("passwordSecret.name = %q", sn)
 	}
 	if err := k.DropManagedRole(ctx, cl, "app"); err != nil {
 		t.Fatal(err)
 	}
-	got2, _ := k.GetCluster(ctx, "db", "pg1")
-	if got2.Spec.Managed == nil || len(got2.Spec.Managed.Roles) != 0 {
-		t.Fatalf("roles after drop = %+v", got2.Spec.Managed)
+	if _, err := k.GetCRD(ctx, "DatabaseRole", "db", "app"); err == nil {
+		t.Fatal("expected not found after drop")
 	}
 }
 

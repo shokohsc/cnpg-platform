@@ -214,6 +214,8 @@ func (k *Client) UpdateCRD(ctx context.Context, kind, ns string, obj *unstructur
 	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind})
 	if n := nsFor(kind, ns); n != "" {
 		obj.SetNamespace(n)
+	} else {
+		obj.SetNamespace("")
 	}
 	return k.c.Update(ctx, obj)
 }

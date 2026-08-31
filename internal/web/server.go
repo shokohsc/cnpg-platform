@@ -13,6 +13,7 @@ import (
 
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"cnpg-manager/internal/kube"
 	"cnpg-manager/internal/pg"
@@ -36,6 +37,12 @@ type ClusterStore interface {
 	GetSecret(ctx context.Context, ns, name string) (map[string][]byte, error)
 	UpsertSecret(ctx context.Context, ns, name string, data map[string]string) error
 	DeleteSecret(ctx context.Context, ns, name string) error
+	ListCRD(ctx context.Context, kind, ns string) ([]unstructured.Unstructured, error)
+	GetCRD(ctx context.Context, kind, ns, name string) (*unstructured.Unstructured, error)
+	CreateCRD(ctx context.Context, kind, ns string, obj *unstructured.Unstructured) error
+	UpdateCRD(ctx context.Context, kind, ns string, obj *unstructured.Unstructured) error
+	PatchCRD(ctx context.Context, kind, ns, name string, patch map[string]any) error
+	DeleteCRD(ctx context.Context, kind, ns, name string) error
 }
 
 // PG is the slice of pg.Server used by the API (fake-able in tests).
@@ -77,6 +84,14 @@ func New(cs ClusterStore, connectPG PGFunc) http.Handler {
 	mux.HandleFunc("GET /api/clusters/{cluster}/backups", h.listBackups)
 	mux.HandleFunc("POST /api/clusters/{cluster}/backups", h.createBackup)
 	mux.HandleFunc("GET /api/clusters/{cluster}/connect", h.connInfo)
+	mux.HandleFunc("PATCH /api/clusters/{cluster}/scale", h.scaleCluster)
+	mux.HandleFunc("PATCH /api/clusters/{cluster}/config", h.editClusterConfig)
+	mux.HandleFunc("GET /api/crds/{kind}", h.listCRDs)
+	mux.HandleFunc("POST /api/crds/{kind}", h.createCRD)
+	mux.HandleFunc("GET /api/crds/{kind}/{name}", h.getCRD)
+	mux.HandleFunc("PUT /api/crds/{kind}/{name}", h.updateCRD)
+	mux.HandleFunc("PATCH /api/crds/{kind}/{name}", h.patchCRD)
+	mux.HandleFunc("DELETE /api/crds/{kind}/{name}", h.deleteCRD)
 	// Catch-all: unmatched /api/* returns JSON (not the SPA fallback). Task 7
 	// registers more-specific routes that take precedence over this pattern.
 	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

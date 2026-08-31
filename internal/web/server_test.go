@@ -11,6 +11,7 @@ import (
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"cnpg-manager/internal/pg"
@@ -56,6 +57,7 @@ type fakeStore struct {
 	clusters []apiv1.Cluster
 	secret   map[string][]byte
 	getErr   error
+	crds     map[string]*unstructured.Unstructured
 }
 
 func (f *fakeStore) ListClusters(ctx context.Context) ([]apiv1.Cluster, error) {
@@ -84,6 +86,110 @@ func (f *fakeStore) UpsertSecret(ctx context.Context, ns, name string, data map[
 }
 func (f *fakeStore) DeleteSecret(ctx context.Context, ns, name string) error {
 	return nil
+}
+
+func (f *fakeStore) ListCRD(ctx context.Context, kind, ns string) ([]unstructured.Unstructured, error) {
+	var out []unstructured.Unstructured
+	for _, o := range f.crds {
+		if k, _, _ := unstructured.NestedString(o.Object, "kind"); k != kind {
+			continue
+		}
+		if ns != "" {
+			if o.GetNamespace() != ns {
+				continue
+			}
+		}
+		out = append(out, *o)
+	}
+	return out, nil
+}
+func (f *fakeStore) GetCRD(ctx context.Context, kind, ns, name string) (*unstructured.Unstructured, error) {
+	for _, o := range f.crds {
+		if o.GetName() == name && (ns == "" || o.GetNamespace() == ns) {
+			cp := o.DeepCopy()
+			return cp, nil
+		}
+	}
+	return nil, apierrors.NewNotFound(schema.GroupResource{Group: "postgresql.cnpg.io", Resource: "crds"}, name)
+}
+func (f *fakeStore) CreateCRD(ctx context.Context, kind, ns string, obj *unstructured.Unstructured) error {
+	cp := obj.DeepCopy()
+	if ns != "" && cp.GetNamespace() == "" {
+		cp.SetNamespace(ns)
+	}
+	cp.SetResourceVersion("1")
+	if f.crds == nil {
+		f.crds = map[string]*unstructured.Unstructured{}
+	}
+	f.crds[cp.GetNamespace()+"/"+cp.GetName()] = cp
+	return nil
+}
+func (f *fakeStore) UpdateCRD(ctx context.Context, kind, ns string, obj *unstructured.Unstructured) error {
+	if obj.GetResourceVersion() == "" {
+		return apierrors.NewConflict(schema.GroupResource{Group: "postgresql.cnpg.io", Resource: "crds"}, obj.GetName(), nil)
+	}
+	f.crds[obj.GetNamespace()+"/"+obj.GetName()] = obj.DeepCopy()
+	return nil
+}
+func (f *fakeStore) PatchCRD(ctx context.Context, kind, ns, name string, patch map[string]any) error {
+	for _, o := range f.crds {
+		if o.GetName() == name && (ns == "" || o.GetNamespace() == ns) {
+			pb, _ := json.Marshal(patch)
+			mb, _ := o.MarshalJSON()
+			merged, err := mergeJSON(mb, pb)
+			if err != nil {
+				return err
+			}
+			mergedObj := &unstructured.Unstructured{}
+			if err := mergedObj.UnmarshalJSON(merged); err != nil {
+				return err
+			}
+			f.crds[o.GetNamespace()+"/"+o.GetName()] = mergedObj
+			return nil
+		}
+	}
+	return apierrors.NewNotFound(schema.GroupResource{Group: "postgresql.cnpg.io", Resource: "crds"}, name)
+}
+func (f *fakeStore) DeleteCRD(ctx context.Context, kind, ns, name string) error {
+	delete(f.crds, ns+"/"+name)
+	return nil
+}
+
+func mergeJSON(base, patch []byte) ([]byte, error) {
+	var b, p map[string]any
+	if err := json.Unmarshal(base, &b); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(patch, &p); err != nil {
+		return nil, err
+	}
+	deepMerge(b, p)
+	return json.Marshal(b)
+}
+
+func deepMerge(base, patch map[string]any) {
+	for k, pv := range patch {
+		if pv == nil {
+			delete(base, k)
+			continue
+		}
+		bv, ok := base[k].(map[string]any)
+		pm, ok2 := pv.(map[string]any)
+		if ok && ok2 {
+			deepMerge(bv, pm)
+		} else {
+			base[k] = pv
+		}
+	}
+}
+
+func seedCRD(f *fakeStore, kind, ns, name string) {
+	cp := &unstructured.Unstructured{}
+	cp.SetGroupVersionKind(schema.GroupVersionKind{Group: "postgresql.cnpg.io", Version: "v1", Kind: kind})
+	cp.SetName(name)
+	cp.SetNamespace(ns)
+	cp.Object["spec"] = map[string]any{"instances": int64(1)}
+	_ = f.CreateCRD(context.Background(), kind, ns, cp)
 }
 
 func newTestHandler(cs ClusterStore, pgc PGFunc) http.Handler {
@@ -290,5 +396,133 @@ func TestConnectInfoSuperuser(t *testing.T) {
 	}
 	if !strings.Contains(out.URLDirect, "pg1-rw.db.svc:5432/app") {
 		t.Fatalf("bad url %s", out.URLDirect)
+	}
+}
+
+func TestCRDInvalidKind(t *testing.T) {
+	h := newTestHandler(&fakeStore{}, nil)
+	req := httptest.NewRequest("GET", "/api/crds/Bogus", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("expected 400 for bogus kind, got %d", rec.Code)
+	}
+}
+
+func TestCRDListAndGet(t *testing.T) {
+	fs := &fakeStore{}
+	seedCRD(fs, "Backup", "db", "b1")
+	h := newTestHandler(fs, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/crds/Backup?ns=db", nil))
+	if rec.Code != 200 {
+		t.Fatalf("list status %d: %s", rec.Code, rec.Body.String())
+	}
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest("GET", "/api/crds/Backup/b1?ns=db", nil))
+	if rec2.Code != 200 {
+		t.Fatalf("get status %d", rec2.Code)
+	}
+	var got map[string]any
+	_ = json.Unmarshal(rec2.Body.Bytes(), &got)
+	meta := got["metadata"].(map[string]any)
+	if meta["name"] != "b1" {
+		t.Fatalf("bad body %v", got)
+	}
+}
+
+func TestCRDClusterScopedListAllNamespaces(t *testing.T) {
+	fs := &fakeStore{}
+	seedCRD(fs, "ClusterImageCatalog", "", "cat")
+	h := newTestHandler(fs, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/crds/ClusterImageCatalog", nil))
+	if rec.Code != 200 {
+		t.Fatalf("list status %d: %s", rec.Code, rec.Body.String())
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 cluster-scoped crd, got %d", len(got))
+	}
+}
+
+func TestCRDCreatePatchDelete(t *testing.T) {
+	fs := &fakeStore{}
+	h := newTestHandler(fs, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/crds/Backup?ns=db",
+		strings.NewReader(`{"name":"b9","spec":{"method":"barmanObjectStore"}}`)))
+	if rec.Code != 201 {
+		t.Fatalf("create status %d: %s", rec.Code, rec.Body.String())
+	}
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest("PATCH", "/api/crds/Backup/b9?ns=db",
+		strings.NewReader(`{"spec":{"phase":"Running"}}`)))
+	if rec2.Code != 200 {
+		t.Fatalf("patch status %d: %s", rec2.Code, rec2.Body.String())
+	}
+	rec3 := httptest.NewRecorder()
+	h.ServeHTTP(rec3, httptest.NewRequest("DELETE", "/api/crds/Backup/b9?ns=db", nil))
+	if rec3.Code != 200 {
+		t.Fatalf("delete status %d", rec3.Code)
+	}
+	rec4 := httptest.NewRecorder()
+	h.ServeHTTP(rec4, httptest.NewRequest("GET", "/api/crds/Backup/b9?ns=db", nil))
+	if rec4.Code != 404 {
+		t.Fatalf("expected 404 after delete, got %d", rec4.Code)
+	}
+}
+
+func TestScaleCluster(t *testing.T) {
+	fs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}}
+	seedCRD(fs, "Cluster", "db", "pg1")
+	h := newTestHandler(fs, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PATCH", "/api/clusters/pg1/scale?ns=db",
+		strings.NewReader(`{"instances":5}`)))
+	if rec.Code != 200 {
+		t.Fatalf("scale status %d: %s", rec.Code, rec.Body.String())
+	}
+	got, _ := fs.GetCRD(context.Background(), "Cluster", "db", "pg1")
+	spec, _, _ := unstructured.NestedInt64(got.Object, "spec", "instances")
+	if spec != 5 {
+		t.Fatalf("instances not scaled, got %v", spec)
+	}
+}
+
+func TestScaleClusterInvalid(t *testing.T) {
+	fs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}}
+	h := newTestHandler(fs, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PATCH", "/api/clusters/pg1/scale?ns=db",
+		strings.NewReader(`{"instances":0}`)))
+	if rec.Code != 400 {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestEditClusterConfig(t *testing.T) {
+	fs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}}
+	seedCRD(fs, "Cluster", "db", "pg1")
+	h := newTestHandler(fs, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PATCH", "/api/clusters/pg1/config?ns=db",
+		strings.NewReader(`{"resources":{"requests":{"cpu":"1"}},"postgresql":{"parameters":{"shared_buffers":"1GB"}}}`)))
+	if rec.Code != 200 {
+		t.Fatalf("config status %d: %s", rec.Code, rec.Body.String())
+	}
+	got, _ := fs.GetCRD(context.Background(), "Cluster", "db", "pg1")
+	sb, _, _ := unstructured.NestedString(got.Object, "spec", "postgresql", "parameters", "shared_buffers")
+	if sb != "1GB" {
+		t.Fatalf("postgresql param not set: %s", sb)
 	}
 }

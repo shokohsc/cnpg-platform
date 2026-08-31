@@ -33,7 +33,7 @@ Rejected alternatives:
 
 ## CNPG type inventory
 
-The `apiv1` package (cloudnative-pg v1.25.0) bundles and `AddToScheme`
+The `apiv1` package (cloudnative-pg v1.30.0) bundles and `AddToScheme`
 registers the group `postgresql.cnpg.io,v1` with these kinds, all available
 to the generic layer:
 Cluster, Backup, Database, DatabaseRole, Pooler, ScheduledBackup,

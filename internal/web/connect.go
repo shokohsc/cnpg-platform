@@ -25,8 +25,8 @@ func (h *api) connInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	db := r.URL.Query().Get("db")
 	role := r.URL.Query().Get("role")
-	if db == "" || role == "" {
-		writeErr(w, http.StatusBadRequest, "db and role query params are required")
+	if db == "" {
+		writeErr(w, http.StatusBadRequest, "db query param is required")
 		return
 	}
 	sec, err := h.cs.GetSecret(r.Context(), cl.Namespace, kube.SuperuserSecret(cl))
@@ -36,6 +36,9 @@ func (h *api) connInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	superUser := string(sec["username"])
 	var user, password string
+	if role == "" {
+		role = superUser
+	}
 	if role == superUser {
 		user, password = superUser, string(sec["password"])
 	} else {

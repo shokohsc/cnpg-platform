@@ -490,6 +490,37 @@ func TestConnectInfoSuperuser(t *testing.T) {
 	}
 }
 
+func TestConnectInfoDefaultsToSuperuser(t *testing.T) {
+	cs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}, secret: map[string][]byte{"username": []byte("postgres"), "password": []byte("pw")}}
+	h := newTestHandler(cs, nil)
+	req := httptest.NewRequest("GET", "/api/clusters/pg1/connect?ns=db&db=app", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
+	}
+	var out connectInfo
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.User != "postgres" || out.Password != "pw" || out.DB != "app" {
+		t.Fatalf("expected superuser default, got %+v", out)
+	}
+}
+
+func TestConnectInfoRequiresDB(t *testing.T) {
+	cs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}}
+	h := newTestHandler(cs, nil)
+	req := httptest.NewRequest("GET", "/api/clusters/pg1/connect?ns=db", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
 func TestCRDInvalidKind(t *testing.T) {
 	h := newTestHandler(&fakeStore{}, nil)
 	req := httptest.NewRequest("GET", "/api/crds/Bogus", nil)

@@ -3,7 +3,7 @@ import { onMounted } from 'vue'
 import Clusters from './views/Clusters.vue'
 import ClusterDetail from './views/ClusterDetail.vue'
 import ConnectModal from './components/ConnectModal.vue'
-import { store } from './store'
+import { store, phaseClass } from './store'
 
 onMounted(() => {
   store.loadClusters().catch((e) => console.error(e))

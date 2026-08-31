@@ -13,8 +13,8 @@ rules:
     resources: ["clusterimagecatalogs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
-    resources: ["secrets", "pods"]
-    verbs: ["get", "list", "watch", "create", "update"]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

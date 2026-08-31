@@ -38,7 +38,11 @@ func (h *api) listCRDs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *api) getCRD(w http.ResponseWriter, r *http.Request) {
-	obj, err := h.cs.GetCRD(r.Context(), r.PathValue("kind"), r.URL.Query().Get("ns"), r.PathValue("name"))
+	kind := r.PathValue("kind")
+	if _, ok := validCRDKind(w, kind); !ok {
+		return
+	}
+	obj, err := h.cs.GetCRD(r.Context(), kind, r.URL.Query().Get("ns"), r.PathValue("name"))
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -55,6 +59,10 @@ func (h *api) createCRD(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
 	gvr, ok := validCRDKind(w, kind)
 	if !ok {
+		return
+	}
+	if kind == "Cluster" {
+		writeErr(w, http.StatusBadRequest, "Cluster create is not allowed; use the cluster endpoints")
 		return
 	}
 	var in crdCreateReq
@@ -118,6 +126,10 @@ func (h *api) patchCRD(w http.ResponseWriter, r *http.Request) {
 func (h *api) deleteCRD(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
 	if _, ok := validCRDKind(w, kind); !ok {
+		return
+	}
+	if kind == "Cluster" {
+		writeErr(w, http.StatusBadRequest, "Cluster delete is not allowed")
 		return
 	}
 	if err := h.cs.DeleteCRD(r.Context(), kind, r.URL.Query().Get("ns"), r.PathValue("name")); err != nil {

@@ -409,6 +409,31 @@ func TestCRDInvalidKind(t *testing.T) {
 	}
 }
 
+func TestCRDGetInvalidKind(t *testing.T) {
+	h := newTestHandler(&fakeStore{}, nil)
+	req := httptest.NewRequest("GET", "/api/crds/Bogus/foo", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("expected 400 for bogus kind on get, got %d", rec.Code)
+	}
+}
+
+func TestCRDClusterCreateDeleteRejected(t *testing.T) {
+	h := newTestHandler(&fakeStore{}, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/crds/Cluster?ns=db",
+		strings.NewReader(`{"name":"pg1","spec":{"instances":1}}`)))
+	if rec.Code != 400 {
+		t.Fatalf("expected 400 for Cluster create, got %d", rec.Code)
+	}
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest("DELETE", "/api/crds/Cluster/pg1?ns=db", nil))
+	if rec2.Code != 400 {
+		t.Fatalf("expected 400 for Cluster delete, got %d", rec2.Code)
+	}
+}
+
 func TestCRDListAndGet(t *testing.T) {
 	fs := &fakeStore{}
 	seedCRD(fs, "Backup", "db", "b1")

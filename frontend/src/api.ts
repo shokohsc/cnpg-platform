@@ -5,6 +5,10 @@ export interface Cluster {
   phase: string
   readyInstances: number
   instances: number
+  resources?: ResourceRequirements
+  storage?: StorageSpec
+  imageName?: string
+  postgresql?: PostgresConfig
   port: number
   databases: number
   roles: number
@@ -91,6 +95,18 @@ export interface ConnectInfo {
   urlVerifyFull: string
 }
 
+export interface ResourceRequirements {
+  requests?: { cpu?: string; memory?: string }
+  limits?: { cpu?: string; memory?: string }
+}
+export interface StorageSpec {
+  size?: string
+  storageClass?: string
+}
+export interface PostgresConfig {
+  parameters?: Record<string, string>
+}
+
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: init?.body ? { 'Content-Type': 'application/json' } : {},
@@ -127,5 +143,32 @@ export const api = {
   createBackup: (c: string, ns: string) =>
     req<{ created: string }>(`/api/clusters/${c}/backups?ns=${ns}`, { method: 'POST' }),
   connect: (c: string, ns: string, db: string, role: string) =>
-    req<ConnectInfo>(`/api/clusters/${c}/connect?ns=${ns}&db=${encodeURIComponent(db)}&role=${encodeURIComponent(role)}`)
+    req<ConnectInfo>(`/api/clusters/${c}/connect?ns=${ns}&db=${encodeURIComponent(db)}&role=${encodeURIComponent(role)}`),
+  crud: {
+    list: (kind: string, ns: string) => req<any[]>(`/api/crds/${kind}?ns=${ns}`),
+    get: (kind: string, ns: string, name: string) =>
+      req<any>(`/api/crds/${kind}/${encodeURIComponent(name)}?ns=${ns}`),
+    create: (kind: string, ns: string, name: string, spec: any) =>
+      req<{ created: string }>(`/api/crds/${kind}?ns=${ns}`, { method: 'POST', body: JSON.stringify({ name, spec }) }),
+    update: (kind: string, ns: string, name: string, obj: any) =>
+      req<{ updated: string }>(`/api/crds/${kind}/${encodeURIComponent(name)}?ns=${ns}`, { method: 'PUT', body: JSON.stringify(obj) }),
+    patch: (kind: string, ns: string, name: string, obj: any) =>
+      req<{ patched: string }>(`/api/crds/${kind}/${encodeURIComponent(name)}?ns=${ns}`, { method: 'PATCH', body: JSON.stringify(obj) }),
+    del: (kind: string, ns: string, name: string) =>
+      req<{ deleted: string }>(`/api/crds/${kind}/${encodeURIComponent(name)}?ns=${ns}`, { method: 'DELETE' })
+  },
+  scale: (c: string, ns: string, instances: number) =>
+    req<{ instances: number }>(`/api/clusters/${c}/scale?ns=${ns}`, { method: 'PATCH', body: JSON.stringify({ instances }) }),
+  editConfig: (c: string, ns: string, spec: any) =>
+    req<{ updated: string }>(`/api/clusters/${c}/config?ns=${ns}`, { method: 'PATCH', body: JSON.stringify(spec) })
 }
+
+export const CRD_KINDS = [
+  { kind: 'Backup', namespaced: true },
+  { kind: 'Database', namespaced: true },
+  { kind: 'DatabaseRole', namespaced: true },
+  { kind: 'Pooler', namespaced: true },
+  { kind: 'ScheduledBackup', namespaced: true },
+  { kind: 'ImageCatalog', namespaced: true },
+  { kind: 'ClusterImageCatalog', namespaced: false }
+] as const

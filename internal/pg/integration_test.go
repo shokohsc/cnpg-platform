@@ -67,7 +67,7 @@ func TestIntegrationRoles(t *testing.T) {
 
 	role := "itest_role"
 	_ = s.DropRole(ctx, role)
-	if err := s.CreateRole(ctx, role, "pw123", CreateRoleOptions{Login: true}); err != nil {
+	if err := s.CreateRole(ctx, role, "pw123", CreateRoleOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	roles, err := s.ListRoles(ctx)

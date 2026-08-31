@@ -18,7 +18,6 @@ type RoleInfo struct {
 }
 
 type CreateRoleOptions struct {
-	Login    bool
 	Super    bool
 	CreateDB bool
 	GrantDB  string

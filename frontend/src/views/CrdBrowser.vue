@@ -23,9 +23,12 @@ async function loadList() {
 watch(() => selected.value, loadList)
 
 async function open(item: any) {
-  current.value = await api.crud.get(selected.value!.kind,
-    selected.value!.namespaced ? (item.metadata?.namespace || '') : '', item.metadata?.name)
-  created.value = false
+  error.value = ''
+  try {
+    current.value = await api.crud.get(selected.value!.kind,
+      selected.value!.namespaced ? (item.metadata?.namespace || '') : '', item.metadata?.name)
+    created.value = false
+  } catch (e) { error.value = String(e) }
 }
 
 async function saveEdit() {
@@ -60,7 +63,6 @@ async function create() {
   } catch (e) { error.value = String(e) }
 }
 
-const phaseOf = (item: any) => item.status?.phase || item.status?.phase?.phase || 'pending'
 </script>
 
 <template>

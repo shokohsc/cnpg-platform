@@ -35,6 +35,7 @@ type ClusterStore interface {
 	CreateBackup(ctx context.Context, b *apiv1.Backup) error
 	GetSecret(ctx context.Context, ns, name string) (map[string][]byte, error)
 	UpsertSecret(ctx context.Context, ns, name string, data map[string]string) error
+	DeleteSecret(ctx context.Context, ns, name string) error
 }
 
 // PG is the slice of pg.Server used by the API (fake-able in tests).

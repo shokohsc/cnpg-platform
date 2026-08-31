@@ -24,9 +24,11 @@ watch(cluster, async (c) => {
       api.roles(c.name, c.namespace)
     ])
     const firstDb = dbs.value.find((d) => !d.template) ?? dbs.value[0]
-    if (firstDb) { db.value = firstDb.name; await load() }
+    if (firstDb) db.value = firstDb.name
+    if (roles.value.length && !role.value) role.value = roles.value[0].name
+    await load()
   } catch (e) { error.value = String(e) }
-})
+}, { immediate: true })
 
 async function load() {
   if (!cluster.value || !db.value || !role.value) return

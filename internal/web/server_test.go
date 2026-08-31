@@ -82,6 +82,9 @@ func (f *fakeStore) GetSecret(ctx context.Context, ns, name string) (map[string]
 func (f *fakeStore) UpsertSecret(ctx context.Context, ns, name string, data map[string]string) error {
 	return nil
 }
+func (f *fakeStore) DeleteSecret(ctx context.Context, ns, name string) error {
+	return nil
+}
 
 func newTestHandler(cs ClusterStore, pgc PGFunc) http.Handler {
 	return New(cs, func(ctx context.Context, cl *apiv1.Cluster) (PG, error) {

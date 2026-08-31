@@ -109,6 +109,14 @@ func (k *Client) UpsertSecret(ctx context.Context, ns, name string, data map[str
 	return err
 }
 
+func (k *Client) DeleteSecret(ctx context.Context, ns, name string) error {
+	err := k.c.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}})
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 func ClusterPort(cl *apiv1.Cluster) int32 {
 	if v, ok := cl.Annotations[PortAnnotation]; ok {
 		if p, err := strconv.ParseInt(v, 10, 32); err == nil {

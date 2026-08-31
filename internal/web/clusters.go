@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
@@ -97,10 +98,19 @@ func (h *api) listClusters(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
-	out := make([]clusterView, 0, len(clusters))
+	out := make([]clusterView, len(clusters))
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
 	for i := range clusters {
-		out = append(out, enrich(ctx, h, &clusters[i]))
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			out[i] = enrich(ctx, h, &clusters[i])
+		}(i)
 	}
+	wg.Wait()
 	writeJSON(w, http.StatusOK, out)
 }
 

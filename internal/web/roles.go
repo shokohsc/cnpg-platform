@@ -62,6 +62,10 @@ func (h *api) createRole(w http.ResponseWriter, r *http.Request) {
 		}
 		body.Password = p
 	}
+	if body.Name == "superuser" {
+		writeErr(w, http.StatusBadRequest, "role name 'superuser' collides with the cluster superuser secret")
+		return
+	}
 	p, err := h.connectPG(r.Context(), cl)
 	if err != nil {
 		h.writeError(w, err)
@@ -73,8 +77,11 @@ func (h *api) createRole(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
+	// If the credentials secret can't be persisted, undo the PG role so we
+	// don't leave a role with no stored (and now unretrievable) password.
 	if err := h.cs.UpsertSecret(r.Context(), cl.Namespace,
 		kube.RoleSecret(cl, body.Name), map[string]string{"username": body.Name, "password": body.Password}); err != nil {
+		_ = p.DropRole(r.Context(), body.Name)
 		h.writeError(w, err)
 		return
 	}
@@ -94,6 +101,10 @@ func (h *api) dropRole(w http.ResponseWriter, r *http.Request) {
 	}
 	defer p.Close()
 	if err := p.DropRole(r.Context(), r.PathValue("role")); err != nil {
+		h.writeError(w, err)
+		return
+	}
+	if err := h.cs.DeleteSecret(r.Context(), cl.Namespace, kube.RoleSecret(cl, r.PathValue("role"))); err != nil {
 		h.writeError(w, err)
 		return
 	}

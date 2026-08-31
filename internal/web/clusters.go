@@ -122,3 +122,49 @@ func (h *api) getCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, enrich(r.Context(), h, cl))
 }
+
+type scaleReq struct {
+	Instances int `json:"instances"`
+}
+
+func (h *api) scaleCluster(w http.ResponseWriter, r *http.Request) {
+	cl, err := h.resolveCluster(r.Context(), r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	var in scaleReq
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if in.Instances < 1 {
+		writeErr(w, http.StatusBadRequest, "instances must be >= 1")
+		return
+	}
+	if err := h.cs.PatchCRD(r.Context(), "Cluster", cl.Namespace, cl.Name,
+		map[string]any{"spec": map[string]any{"instances": in.Instances}}); err != nil {
+		h.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"instances": in.Instances})
+}
+
+func (h *api) editClusterConfig(w http.ResponseWriter, r *http.Request) {
+	cl, err := h.resolveCluster(r.Context(), r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	var spec map[string]any
+	if err := decode(r, &spec); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := h.cs.PatchCRD(r.Context(), "Cluster", cl.Namespace, cl.Name,
+		map[string]any{"spec": spec}); err != nil {
+		h.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"updated": cl.Name})
+}

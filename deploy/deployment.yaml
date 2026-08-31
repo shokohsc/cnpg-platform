@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cnpg-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cnpg-manager
+  template:
+    metadata:
+      labels:
+        app: cnpg-manager
+    spec:
+      serviceAccountName: cnpg-manager
+      containers:
+        - name: cnpg-manager
+          image: cnpg-manager
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: { drop: ["ALL"] }

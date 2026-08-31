@@ -8,7 +8,7 @@ const roles = ref<Role[]>([])
 const creating = ref(false)
 const error = ref('')
 const flash = ref('')
-const form = ref({ name: '', password: '', grantDB: '', super: false, createDB: false })
+const form = ref({ name: '', password: '', super: false, createDB: false })
 
 async function load() {
   error.value = ''
@@ -21,7 +21,7 @@ async function create() {
   try {
     const r = await api.createRole(props.cluster.name, props.cluster.namespace, form.value)
     flash.value = `Role ${r.name} created — password: ${r.password} (shown once)`
-    form.value = { name: '', password: '', grantDB: '', super: false, createDB: false }
+    form.value = { name: '', password: '', super: false, createDB: false }
     creating.value = false
     await load()
   } catch (e) { error.value = String(e) }
@@ -45,7 +45,6 @@ async function drop(r: Role) {
       <div class="flex gap-2">
         <input v-model="form.name" placeholder="name" class="inp" />
         <input v-model="form.password" placeholder="password (blank = generate)" class="inp" />
-        <input v-model="form.grantDB" placeholder="grant on database (optional)" class="inp" />
       </div>
       <div class="flex gap-4 text-sm text-dim">
         <label><input type="checkbox" v-model="form.createDB" /> createdb</label>

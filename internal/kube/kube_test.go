@@ -169,6 +169,61 @@ func TestListCRDInvalidKind(t *testing.T) {
 	}
 }
 
+func TestCreateAndDeleteDatabase(t *testing.T) {
+	cl := &apiv1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}}
+	k := &Client{c: schemeBuilder()}
+	if err := k.CreateDatabase(context.Background(), cl, "app", "owner1", "template0", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := k.GetCRD(context.Background(), "Database", "db", "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec, _, _ := unstructured.NestedString(got.Object, "spec", "name"); spec != "app" {
+		t.Fatalf("spec.name = %q", spec)
+	}
+	if p, _, _ := unstructured.NestedString(got.Object, "spec", "databaseReclaimPolicy"); p != "delete" {
+		t.Fatalf("reclaim policy = %q, want delete", p)
+	}
+	if err := k.DeleteDatabase(context.Background(), cl, "app"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := k.GetCRD(context.Background(), "Database", "db", "app"); err == nil {
+		t.Fatal("expected not found after delete")
+	}
+}
+
+func TestCreateAndDropManagedRole(t *testing.T) {
+	cl := &apiv1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}}
+	c := schemeBuilder()
+	ctx := context.Background()
+	if err := c.Create(ctx, cl); err != nil {
+		t.Fatal(err)
+	}
+	k := &Client{c: c}
+	if err := k.CreateManagedRole(ctx, cl, "app", "pg1-app", false, true); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := k.GetCluster(ctx, "db", "pg1")
+	if got.Spec.Managed == nil || len(got.Spec.Managed.Roles) != 1 {
+		t.Fatalf("managed roles = %+v", got.Spec.Managed)
+	}
+	r := got.Spec.Managed.Roles[0]
+	if r.Name != "app" || !r.Login || !r.CreateDB || r.Superuser {
+		t.Fatalf("bad role config %+v", r)
+	}
+	if r.PasswordSecret == nil || r.PasswordSecret.Name != "pg1-app" {
+		t.Fatalf("passwordSecret = %+v", r.PasswordSecret)
+	}
+	if err := k.DropManagedRole(ctx, cl, "app"); err != nil {
+		t.Fatal(err)
+	}
+	got2, _ := k.GetCluster(ctx, "db", "pg1")
+	if got2.Spec.Managed == nil || len(got2.Spec.Managed.Roles) != 0 {
+		t.Fatalf("roles after drop = %+v", got2.Spec.Managed)
+	}
+}
+
 func TestPatchCRD(t *testing.T) {
 	c := schemeBuilder()
 	k := &Client{c: c}

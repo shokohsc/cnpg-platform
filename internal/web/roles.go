@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"cnpg-manager/internal/kube"
-	"cnpg-manager/internal/pg"
 )
 
 func (h *api) listRoles(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +47,6 @@ func (h *api) createRole(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 		Super    bool   `json:"super"`
 		CreateDB bool   `json:"createDB"`
-		GrantDB  string `json:"grantDB"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body: "+err.Error())
@@ -66,22 +64,17 @@ func (h *api) createRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "role name 'superuser' collides with the cluster superuser secret")
 		return
 	}
-	p, err := h.connectPG(r.Context(), cl)
-	if err != nil {
-		h.writeError(w, err)
-		return
-	}
-	defer p.Close()
-	if err := p.CreateRole(r.Context(), body.Name, body.Password,
-		pg.CreateRoleOptions{Super: body.Super, CreateDB: body.CreateDB, GrantDB: body.GrantDB}); err != nil {
-		h.writeError(w, err)
-		return
-	}
-	// If the credentials secret can't be persisted, undo the PG role so we
-	// don't leave a role with no stored (and now unretrievable) password.
+	// Persist credentials first so CNPG can read the password secret when it
+	// reconciles the managed role. If the managed-role write fails, undo the
+	// secret so we don't leak a dangling credential.
+	secretName := kube.RoleSecret(cl, body.Name)
 	if err := h.cs.UpsertSecret(r.Context(), cl.Namespace,
-		kube.RoleSecret(cl, body.Name), map[string]string{"username": body.Name, "password": body.Password}); err != nil {
-		_ = p.DropRole(r.Context(), body.Name)
+		secretName, map[string]string{"username": body.Name, "password": body.Password}); err != nil {
+		h.writeError(w, err)
+		return
+	}
+	if err := h.cs.CreateManagedRole(r.Context(), cl, body.Name, secretName, body.Super, body.CreateDB); err != nil {
+		_ = h.cs.DeleteSecret(r.Context(), cl.Namespace, secretName)
 		h.writeError(w, err)
 		return
 	}
@@ -94,13 +87,7 @@ func (h *api) dropRole(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
-	p, err := h.connectPG(r.Context(), cl)
-	if err != nil {
-		h.writeError(w, err)
-		return
-	}
-	defer p.Close()
-	if err := p.DropRole(r.Context(), r.PathValue("role")); err != nil {
+	if err := h.cs.DropManagedRole(r.Context(), cl, r.PathValue("role")); err != nil {
 		h.writeError(w, err)
 		return
 	}

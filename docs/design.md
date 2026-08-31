@@ -170,11 +170,6 @@ For a given cluster, database, and role:
 
 - Go unit tests for: DB/role name quoting, connect-URL generation, PG error
   mapping, read-only transaction enforcement for the SQL editor.
-- A live integration smoke test (`demo()`) that runs the backend's SQL layer
-  against a local Postgres bootstrap in a container via Docker-adjacent
-  `pg_ctl`/installed PostgreSQL — validates database create/drop, role
-  create/drop, and table listing against a real server. Skipped when no PG
-  is present.
 - `go vet ./...`, `go build`, `go test ./...` must pass.
 - Frontend: `vite build` must succeed; `vue-tsc` type-check if configured.
 - No live Talos cluster is available in this environment — RBAC and deploy

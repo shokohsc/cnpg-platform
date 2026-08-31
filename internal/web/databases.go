@@ -22,18 +22,12 @@ func (h *api) createDatabase(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return
 	}
-	// Guard system databases at the API boundary (pg.Server also rejects them).
+	// Guard system databases at the API boundary.
 	if pg.IsSystemDB(body.Name) {
 		writeErr(w, http.StatusBadRequest, body.Name+" is a system database")
 		return
 	}
-	p, err := h.connectPG(r.Context(), cl)
-	if err != nil {
-		h.writeError(w, err)
-		return
-	}
-	defer p.Close()
-	if err := p.CreateDatabase(r.Context(), body.Name, body.Owner, body.Template, body.Encoding); err != nil {
+	if err := h.cs.CreateDatabase(r.Context(), cl, body.Name, body.Owner, body.Template, body.Encoding); err != nil {
 		h.writeError(w, err)
 		return
 	}
@@ -46,13 +40,7 @@ func (h *api) dropDatabase(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
-	p, err := h.connectPG(r.Context(), cl)
-	if err != nil {
-		h.writeError(w, err)
-		return
-	}
-	defer p.Close()
-	if err := p.DropDatabase(r.Context(), r.PathValue("db")); err != nil {
+	if err := h.cs.DeleteDatabase(r.Context(), cl, r.PathValue("db")); err != nil {
 		h.writeError(w, err)
 		return
 	}

@@ -43,16 +43,16 @@ type ClusterStore interface {
 	UpdateCRD(ctx context.Context, kind, ns string, obj *unstructured.Unstructured) error
 	PatchCRD(ctx context.Context, kind, ns, name string, patch map[string]any) error
 	DeleteCRD(ctx context.Context, kind, ns, name string) error
+	CreateDatabase(ctx context.Context, cl *apiv1.Cluster, name, owner, template, encoding string) error
+	DeleteDatabase(ctx context.Context, cl *apiv1.Cluster, name string) error
+	CreateManagedRole(ctx context.Context, cl *apiv1.Cluster, name, secretName string, super, createDB bool) error
+	DropManagedRole(ctx context.Context, cl *apiv1.Cluster, name string) error
 }
 
 // PG is the slice of pg.Server used by the API (fake-able in tests).
 type PG interface {
 	ListDatabases(ctx context.Context) ([]pg.DBInfo, error)
-	CreateDatabase(ctx context.Context, name, owner, template, encoding string) error
-	DropDatabase(ctx context.Context, name string) error
 	ListRoles(ctx context.Context) ([]pg.RoleInfo, error)
-	CreateRole(ctx context.Context, name, password string, opts pg.CreateRoleOptions) error
-	DropRole(ctx context.Context, name string) error
 	RolePassword(ctx context.Context, name string) (string, error)
 	RunSQL(ctx context.Context, db, stmt string, readOnly bool) (*pg.SQLResult, error)
 	ListTables(ctx context.Context, db string) ([]pg.SchemaInfo, error)

@@ -273,6 +273,73 @@ func RoleSecret(cl *apiv1.Cluster, role string) string {
 	return cl.Name + "-" + role
 }
 
+func (k *Client) CreateDatabase(ctx context.Context, cl *apiv1.Cluster, name, owner, template, encoding string) error {
+	obj := &unstructured.Unstructured{Object: map[string]any{
+		"metadata": map[string]any{"name": name},
+		"spec": map[string]any{
+			"cluster":               map[string]any{"name": cl.Name},
+			"name":                  name,
+			"databaseReclaimPolicy": "delete",
+		},
+	}}
+	spec := obj.Object["spec"].(map[string]any)
+	if owner != "" {
+		spec["owner"] = owner
+	}
+	if template != "" {
+		spec["template"] = template
+	}
+	if encoding != "" {
+		spec["encoding"] = encoding
+	}
+	return k.CreateCRD(ctx, "Database", cl.Namespace, obj)
+}
+
+func (k *Client) DeleteDatabase(ctx context.Context, cl *apiv1.Cluster, name string) error {
+	return k.DeleteCRD(ctx, "Database", cl.Namespace, name)
+}
+
+func (k *Client) CreateManagedRole(ctx context.Context, cl *apiv1.Cluster, name, secretName string, super, createDB bool) error {
+	cur, err := k.GetCluster(ctx, cl.Namespace, cl.Name)
+	if err != nil {
+		return err
+	}
+	if cur.Spec.Managed == nil {
+		cur.Spec.Managed = &apiv1.ManagedConfiguration{}
+	}
+	for _, r := range cur.Spec.Managed.Roles {
+		if r.Name == name {
+			return nil
+		}
+	}
+	cur.Spec.Managed.Roles = append(cur.Spec.Managed.Roles, apiv1.RoleConfiguration{
+		Name:           name,
+		Login:          true,
+		Superuser:      super,
+		CreateDB:       createDB,
+		PasswordSecret: &apiv1.LocalObjectReference{Name: secretName},
+	})
+	return k.c.Update(ctx, cur)
+}
+
+func (k *Client) DropManagedRole(ctx context.Context, cl *apiv1.Cluster, name string) error {
+	cur, err := k.GetCluster(ctx, cl.Namespace, cl.Name)
+	if err != nil {
+		return err
+	}
+	if cur.Spec.Managed == nil {
+		return nil
+	}
+	kept := cur.Spec.Managed.Roles[:0]
+	for _, r := range cur.Spec.Managed.Roles {
+		if r.Name != name {
+			kept = append(kept, r)
+		}
+	}
+	cur.Spec.Managed.Roles = kept
+	return k.c.Update(ctx, cur)
+}
+
 func BackupFor(cl *apiv1.Cluster, name string) *apiv1.Backup {
 	b := &apiv1.Backup{ObjectMeta: metav1.ObjectMeta{
 		Namespace: cl.Namespace, Name: name, Labels: map[string]string{ClusterLabelKey: cl.Name}}}

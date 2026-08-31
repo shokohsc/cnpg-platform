@@ -13,8 +13,6 @@ make deploy                   # kubectl apply -k deploy
 
 - **Backend:** `go run ./cmd/server` (connects via kubeconfig, listens on :8080)
 - **Frontend:** `cd frontend && npm run dev` (Vite dev server, proxies /api to :8080)
-- **Smoke test:** `scripts/smoke.sh` (boots local Postgres, runs integration tests)
-
 ## Architecture
 
 - **Go backend** (`cmd/server/main.go`): HTTP server with embedded Vue SPA

@@ -21,30 +21,12 @@ import (
 
 // fakePG implements the full pg.PG interface (used by all web tests).
 type fakePG struct {
-	dbs     []pg.DBInfo
-	err     error
-	created []string
-	dropped []string
+	dbs []pg.DBInfo
+	err error
 }
 
 func (f *fakePG) ListDatabases(ctx context.Context) ([]pg.DBInfo, error) { return f.dbs, f.err }
-func (f *fakePG) CreateDatabase(ctx context.Context, name, owner, template, encoding string) error {
-	f.created = append(f.created, name)
-	return f.err
-}
-func (f *fakePG) DropDatabase(ctx context.Context, name string) error {
-	f.dropped = append(f.dropped, name)
-	return f.err
-}
-func (f *fakePG) ListRoles(ctx context.Context) ([]pg.RoleInfo, error) { return nil, f.err }
-func (f *fakePG) CreateRole(ctx context.Context, name, password string, opts pg.CreateRoleOptions) error {
-	f.created = append(f.created, name)
-	return f.err
-}
-func (f *fakePG) DropRole(ctx context.Context, name string) error {
-	f.dropped = append(f.dropped, name)
-	return f.err
-}
+func (f *fakePG) ListRoles(ctx context.Context) ([]pg.RoleInfo, error)   { return nil, f.err }
 func (f *fakePG) RolePassword(ctx context.Context, name string) (string, error) { return "rolepw", nil }
 func (f *fakePG) RunSQL(ctx context.Context, db, stmt string, readOnly bool) (*pg.SQLResult, error) {
 	return &pg.SQLResult{Command: "SELECT", Rows: [][]any{{1}}}, nil
@@ -56,10 +38,14 @@ func (f *fakePG) ListRows(ctx context.Context, db, schema, table string, limit, 
 func (f *fakePG) Close() {}
 
 type fakeStore struct {
-	clusters []apiv1.Cluster
-	secret   map[string][]byte
-	getErr   error
-	crds     map[string]*unstructured.Unstructured
+	clusters     []apiv1.Cluster
+	secret       map[string][]byte
+	getErr       error
+	crds         map[string]*unstructured.Unstructured
+	dbCreated    []string
+	dbDropped    []string
+	rolesCreated []string
+	rolesDropped []string
 }
 
 func (f *fakeStore) ListClusters(ctx context.Context) ([]apiv1.Cluster, error) {
@@ -87,6 +73,23 @@ func (f *fakeStore) UpsertSecret(ctx context.Context, ns, name string, data map[
 	return nil
 }
 func (f *fakeStore) DeleteSecret(ctx context.Context, ns, name string) error {
+	return nil
+}
+
+func (f *fakeStore) CreateDatabase(ctx context.Context, cl *apiv1.Cluster, name, owner, template, encoding string) error {
+	f.dbCreated = append(f.dbCreated, name)
+	return nil
+}
+func (f *fakeStore) DeleteDatabase(ctx context.Context, cl *apiv1.Cluster, name string) error {
+	f.dbDropped = append(f.dbDropped, name)
+	return nil
+}
+func (f *fakeStore) CreateManagedRole(ctx context.Context, cl *apiv1.Cluster, name, secretName string, super, createDB bool) error {
+	f.rolesCreated = append(f.rolesCreated, name)
+	return nil
+}
+func (f *fakeStore) DropManagedRole(ctx context.Context, cl *apiv1.Cluster, name string) error {
+	f.rolesDropped = append(f.rolesDropped, name)
 	return nil
 }
 
@@ -260,13 +263,27 @@ func TestDropDatabase(t *testing.T) {
 	cs := &fakeStore{clusters: []apiv1.Cluster{
 		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
 	}}
-	pgc := &fakePG{}
-	h := newTestHandler(cs, func(ctx context.Context, cl *apiv1.Cluster) (PG, error) { return pgc, nil })
+	h := newTestHandler(cs, nil)
 	req := httptest.NewRequest("DELETE", "/api/clusters/pg1/databases/app?ns=db", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != 200 || len(pgc.dropped) != 1 || pgc.dropped[0] != "app" {
-		t.Fatalf("drop failed: code=%d dropped=%v", rec.Code, pgc.dropped)
+	if rec.Code != 200 || len(cs.dbDropped) != 1 || cs.dbDropped[0] != "app" {
+		t.Fatalf("drop failed: code=%d dropped=%v", rec.Code, cs.dbDropped)
+	}
+}
+
+func TestCreateDatabaseOK(t *testing.T) {
+	cs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}}
+	h := newTestHandler(cs, nil)
+	req := httptest.NewRequest("POST", "/api/clusters/pg1/databases?ns=db",
+		strings.NewReader(`{"name":"app"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || len(cs.dbCreated) != 1 || cs.dbCreated[0] != "app" {
+		t.Fatalf("create failed: code=%d created=%v", rec.Code, cs.dbCreated)
 	}
 }
 
@@ -404,11 +421,10 @@ func TestHealthz(t *testing.T) {
 func TestCreateRoleReturnsPasswordAndSecret(t *testing.T) {
 	cs := &fakeStore{clusters: []apiv1.Cluster{
 		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
-	}, secret: map[string][]byte{"password": []byte("old")}}
-	pgc := &fakePG{}
-	h := newTestHandler(cs, func(ctx context.Context, cl *apiv1.Cluster) (PG, error) { return pgc, nil })
+	}}
+	h := newTestHandler(cs, nil)
 	req := httptest.NewRequest("POST", "/api/clusters/pg1/roles?ns=db",
-		strings.NewReader(`{"name":"app","grantDB":"appdb"}`))
+		strings.NewReader(`{"name":"app"}`))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
@@ -418,6 +434,22 @@ func TestCreateRoleReturnsPasswordAndSecret(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	if out["password"] == "" {
 		t.Fatal("expected generated password in response")
+	}
+	if len(cs.rolesCreated) != 1 || cs.rolesCreated[0] != "app" {
+		t.Fatalf("roles created = %v", cs.rolesCreated)
+	}
+}
+
+func TestDropRole(t *testing.T) {
+	cs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}}
+	h := newTestHandler(cs, nil)
+	req := httptest.NewRequest("DELETE", "/api/clusters/pg1/roles/app?ns=db", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || len(cs.rolesDropped) != 1 || cs.rolesDropped[0] != "app" {
+		t.Fatalf("role drop failed: code=%d dropped=%v", rec.Code, cs.rolesDropped)
 	}
 }
 

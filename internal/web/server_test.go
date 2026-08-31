@@ -232,3 +232,60 @@ func TestAPINotFoundIsJSON(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
+
+func TestCreateRoleReturnsPasswordAndSecret(t *testing.T) {
+	cs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}, secret: map[string][]byte{"password": []byte("old")}}
+	pgc := &fakePG{}
+	h := newTestHandler(cs, func(ctx context.Context, cl *apiv1.Cluster) (PG, error) { return pgc, nil })
+	req := httptest.NewRequest("POST", "/api/clusters/pg1/roles?ns=db",
+		strings.NewReader(`{"name":"app","grantDB":"appdb"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out["password"] == "" {
+		t.Fatal("expected generated password in response")
+	}
+}
+
+func TestRunSQLValidation(t *testing.T) {
+	cs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}}
+	h := newTestHandler(cs, func(ctx context.Context, cl *apiv1.Cluster) (PG, error) {
+		return &fakePG{}, nil
+	})
+	req := httptest.NewRequest("POST", "/api/clusters/pg1/sql?ns=db",
+		strings.NewReader(`{"db":"","statement":""}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestConnectInfoSuperuser(t *testing.T) {
+	cs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"}},
+	}, secret: map[string][]byte{"username": []byte("postgres"), "password": []byte("pw")}}
+	h := newTestHandler(cs, nil)
+	req := httptest.NewRequest("GET", "/api/clusters/pg1/connect?ns=db&db=app&role=postgres", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
+	}
+	var out connectInfo
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.Password != "pw" || out.User != "postgres" || out.DB != "app" {
+		t.Fatalf("bad connect info %+v", out)
+	}
+	if !strings.Contains(out.URLDirect, "pg1-rw.db.svc:5432/app") {
+		t.Fatalf("bad url %s", out.URLDirect)
+	}
+}

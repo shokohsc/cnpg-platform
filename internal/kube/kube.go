@@ -124,6 +124,9 @@ func RWService(cl *apiv1.Cluster) string {
 
 func SuperuserSecret(cl *apiv1.Cluster) string { return cl.Name + "-superuser" }
 func CASecret(cl *apiv1.Cluster) string        { return cl.Name + "-ca" }
+func RoleSecret(cl *apiv1.Cluster, role string) string {
+	return cl.Name + "-" + role
+}
 
 func BackupFor(cl *apiv1.Cluster, name string) *apiv1.Backup {
 	b := &apiv1.Backup{ObjectMeta: metav1.ObjectMeta{

@@ -67,6 +67,15 @@ func New(cs ClusterStore, connectPG PGFunc) http.Handler {
 	mux.HandleFunc("GET /api/clusters/{cluster}", h.getCluster)
 	mux.HandleFunc("POST /api/clusters/{cluster}/databases", h.createDatabase)
 	mux.HandleFunc("DELETE /api/clusters/{cluster}/databases/{db}", h.dropDatabase)
+	mux.HandleFunc("GET /api/clusters/{cluster}/roles", h.listRoles)
+	mux.HandleFunc("POST /api/clusters/{cluster}/roles", h.createRole)
+	mux.HandleFunc("DELETE /api/clusters/{cluster}/roles/{role}", h.dropRole)
+	mux.HandleFunc("POST /api/clusters/{cluster}/sql", h.runSQL)
+	mux.HandleFunc("GET /api/clusters/{cluster}/tables", h.listTables)
+	mux.HandleFunc("GET /api/clusters/{cluster}/tables/{schema}/{table}/rows", h.listRows)
+	mux.HandleFunc("GET /api/clusters/{cluster}/backups", h.listBackups)
+	mux.HandleFunc("POST /api/clusters/{cluster}/backups", h.createBackup)
+	mux.HandleFunc("GET /api/clusters/{cluster}/connect", h.connInfo)
 	// Catch-all: unmatched /api/* returns JSON (not the SPA fallback). Task 7
 	// registers more-specific routes that take precedence over this pattern.
 	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

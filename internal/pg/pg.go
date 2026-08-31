@@ -63,3 +63,6 @@ func QuoteLit(s string) string {
 }
 
 var systemDBs = map[string]bool{"postgres": true, "template0": true, "template1": true}
+
+// IsSystemDB reports whether name is a reserved PostgreSQL system database.
+func IsSystemDB(name string) bool { return systemDBs[name] }

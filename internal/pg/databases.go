@@ -57,7 +57,7 @@ func (s *Server) CreateDatabase(ctx context.Context, name, owner, template, enco
 	if name == "" || len(name) > 63 {
 		return fmt.Errorf("invalid database name")
 	}
-	if isSystemDB(name) {
+	if IsSystemDB(name) {
 		return fmt.Errorf("%q is a system database", name)
 	}
 	_, err := s.conn.Exec(ctx, createDatabaseSQL(name, owner, template, encoding))
@@ -71,7 +71,7 @@ func (s *Server) DropDatabase(ctx context.Context, name string) error {
 	if name == "" {
 		return fmt.Errorf("invalid database name")
 	}
-	if isSystemDB(name) {
+	if IsSystemDB(name) {
 		return fmt.Errorf("%q is a system database", name)
 	}
 	_, err := s.conn.Exec(ctx,
@@ -83,5 +83,3 @@ func (s *Server) DropDatabase(ctx context.Context, name string) error {
 	_, err = s.conn.Exec(ctx, "DROP DATABASE "+QuoteIdent(name))
 	return normalizePGErr(err)
 }
-
-func isSystemDB(name string) bool { return systemDBs[name] }

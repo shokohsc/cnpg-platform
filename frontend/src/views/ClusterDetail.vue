@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { api } from '../api'
 import type { Cluster } from '../api'
 import { store } from '../store'
@@ -11,14 +11,6 @@ import BackupsTab from './BackupsTab.vue'
 
 const props = defineProps<{ cluster: Cluster }>()
 const tab = ref<'overview' | 'databases' | 'roles' | 'sql' | 'tables' | 'backups'>('overview')
-const first = ref(true)
-watch(() => props.cluster, async () => {
-  if (first.value) {
-    first.value = false
-    return
-  }
-  await store.loadClusters()
-}, { deep: true })
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
@@ -33,7 +25,7 @@ const tabs = [
 <template>
   <div class="p-6">
     <div class="flex items-center gap-3 mb-4">
-      <button class="text-dim hover:text-fg mr-2" @click="store.selectCluster(null as any)">←</button>
+      <button class="text-dim hover:text-fg mr-2" @click="store.selectCluster(null)">←</button>
       <h1 class="text-xl font-semibold">{{ cluster.name }}</h1>
       <span class="text-xs px-2 py-0.5 rounded bg-panel2 border border-border text-dim">{{ cluster.namespace }}</span>
       <button class="ml-auto px-3 py-1.5 rounded bg-accent text-bg text-sm font-medium" @click="store.openConnect(cluster)">

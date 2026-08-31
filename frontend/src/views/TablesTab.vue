@@ -15,8 +15,10 @@ const error = ref('')
 const loading = ref(false)
 
 async function loadDbs() {
-  dbs.value = await api.databases(props.cluster.name, props.cluster.namespace)
-  if (!db.value && dbs.value.length) db.value = dbs.value.find((d) => !d.template)?.name ?? dbs.value[0].name
+  try {
+    dbs.value = await api.databases(props.cluster.name, props.cluster.namespace)
+    if (!db.value && dbs.value.length) db.value = dbs.value.find((d) => !d.template)?.name ?? dbs.value[0].name
+  } catch (e) { error.value = String(e) }
 }
 async function loadTables() {
   if (!db.value) return

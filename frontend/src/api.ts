@@ -93,7 +93,7 @@ export interface ConnectInfo {
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: init?.body ? { 'Content-Type': 'application/json' } : {},
     ...init
   })
   if (!res.ok) {

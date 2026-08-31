@@ -29,12 +29,12 @@ func (h *api) listRoles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, roles)
 }
 
-func randomPassword(n int) string {
+func randomPassword(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		return "password"
+		return "", err
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 func (h *api) createRole(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,12 @@ func (h *api) createRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Password == "" {
-		body.Password = randomPassword(16)
+		p, err := randomPassword(16)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to generate password")
+			return
+		}
+		body.Password = p
 	}
 	p, err := h.connectPG(r.Context(), cl)
 	if err != nil {
@@ -68,8 +73,11 @@ func (h *api) createRole(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
-	_ = h.cs.UpsertSecret(r.Context(), cl.Namespace,
-		kube.RoleSecret(cl, body.Name), map[string]string{"username": body.Name, "password": body.Password})
+	if err := h.cs.UpsertSecret(r.Context(), cl.Namespace,
+		kube.RoleSecret(cl, body.Name), map[string]string{"username": body.Name, "password": body.Password}); err != nil {
+		h.writeError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"name": body.Name, "password": body.Password})
 }
 

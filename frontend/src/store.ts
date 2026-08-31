@@ -25,7 +25,7 @@ export const store = reactive({
     return this.clusters
   },
 
-  async selectCluster(c: Cluster) {
+  async selectCluster(c: Cluster | null) {
     this.current = c
   },
 

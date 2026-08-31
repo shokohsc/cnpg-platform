@@ -1,7 +1,16 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"cnpg-manager/internal/kube"
+)
 
 func main() {
-	fmt.Println("cnpg-manager: please run task N to fill this in")
+	k, err := kube.New()
+	if err != nil {
+		fmt.Println("warning: no cluster config:", err)
+	} else {
+		fmt.Println("cnpg-manager: kube client ready:", k != nil)
+	}
 }

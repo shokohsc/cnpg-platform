@@ -152,8 +152,6 @@ export const api = {
       req<{ created: string }>(`/api/crds/${kind}?ns=${ns}`, { method: 'POST', body: JSON.stringify({ name, spec }) }),
     update: (kind: string, ns: string, name: string, obj: any) =>
       req<{ updated: string }>(`/api/crds/${kind}/${encodeURIComponent(name)}?ns=${ns}`, { method: 'PUT', body: JSON.stringify(obj) }),
-    patch: (kind: string, ns: string, name: string, obj: any) =>
-      req<{ patched: string }>(`/api/crds/${kind}/${encodeURIComponent(name)}?ns=${ns}`, { method: 'PATCH', body: JSON.stringify(obj) }),
     del: (kind: string, ns: string, name: string) =>
       req<{ deleted: string }>(`/api/crds/${kind}/${encodeURIComponent(name)}?ns=${ns}`, { method: 'DELETE' })
   },

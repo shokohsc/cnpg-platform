@@ -9,6 +9,7 @@ import (
 	"time"
 
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	"cnpg-manager/internal/kube"
 )
@@ -25,6 +26,34 @@ type clusterView struct {
 	Roles      int    `json:"roles"`
 	LastBackup string `json:"lastBackup,omitempty"`
 	DBError    string `json:"dbError,omitempty"`
+
+	// Configured spec values surfaced for the Overview edit panel.
+	ImageName string        `json:"imageName,omitempty"`
+	Storage   *storageView  `json:"storage,omitempty"`
+	Resources *resourcesView `json:"resources,omitempty"`
+	Postgres  *postgresView `json:"postgresql,omitempty"`
+}
+
+type storageView struct {
+	Size string `json:"size,omitempty"`
+}
+type resourcesView struct {
+	Requests resourcesValues `json:"requests,omitempty"`
+}
+type resourcesValues struct {
+	CPU    string `json:"cpu,omitempty"`
+	Memory string `json:"memory,omitempty"`
+}
+type postgresView struct {
+	Parameters map[string]string `json:"parameters,omitempty"`
+}
+
+func quantityString(q corev1.ResourceList, n corev1.ResourceName) string {
+	v, ok := q[n]
+	if !ok {
+		return ""
+	}
+	return v.String()
 }
 
 // pgMajorVersion extracts the PostgreSQL major version from the image reference
@@ -56,6 +85,19 @@ func enrich(ctx context.Context, h *api, cl *apiv1.Cluster) clusterView {
 		Name: cl.Name, Namespace: cl.Namespace, Phase: cl.Status.Phase,
 		Ready: cl.Status.ReadyInstances, Total: cl.Status.Instances,
 		Port: kube.ClusterPort(cl), Version: pgMajorVersion(cl), Databases: -1, Roles: -1,
+		ImageName: cl.Spec.ImageName,
+	}
+	if cl.Spec.StorageConfiguration.Size != "" {
+		v.Storage = &storageView{Size: cl.Spec.StorageConfiguration.Size}
+	}
+	if len(cl.Spec.Resources.Requests) > 0 {
+		v.Resources = &resourcesView{Requests: resourcesValues{
+			CPU:    quantityString(cl.Spec.Resources.Requests, corev1.ResourceCPU),
+			Memory: quantityString(cl.Spec.Resources.Requests, corev1.ResourceMemory),
+		}}
+	}
+	if len(cl.Spec.PostgresConfiguration.Parameters) > 0 {
+		v.Postgres = &postgresView{Parameters: cl.Spec.PostgresConfiguration.Parameters}
 	}
 	pctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()

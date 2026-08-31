@@ -86,6 +86,7 @@ func New(cs ClusterStore, connectPG PGFunc) http.Handler {
 	mux.HandleFunc("GET /api/clusters/{cluster}/connect", h.connInfo)
 	mux.HandleFunc("PATCH /api/clusters/{cluster}/scale", h.scaleCluster)
 	mux.HandleFunc("PATCH /api/clusters/{cluster}/config", h.editClusterConfig)
+	mux.HandleFunc("GET /healthz", h.healthz)
 	mux.HandleFunc("GET /api/crds/{kind}", h.listCRDs)
 	mux.HandleFunc("POST /api/crds/{kind}", h.createCRD)
 	mux.HandleFunc("GET /api/crds/{kind}/{name}", h.getCRD)
@@ -99,6 +100,11 @@ func New(cs ClusterStore, connectPG PGFunc) http.Handler {
 	}))
 	mux.Handle("/", spaFS(dist))
 	return withLogging(mux)
+}
+
+// healthz reports liveness. The server is healthy whenever it can serve.
+func (h *api) healthz(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // resolveCluster finds a cluster by name, disambiguated by ?ns=.

@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -317,6 +319,50 @@ func TestGetClusterDetail(t *testing.T) {
 	}
 }
 
+func TestGetClusterSurfacesSpecConfig(t *testing.T) {
+	cs := &fakeStore{clusters: []apiv1.Cluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "db"},
+			Spec: apiv1.ClusterSpec{
+				ImageName: "ghcr.io/cloudnative-pg/postgresql:17.4",
+				StorageConfiguration: apiv1.StorageConfiguration{
+					Size: "10Gi",
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("500m"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+				PostgresConfiguration: apiv1.PostgresConfiguration{
+					Parameters: map[string]string{"shared_buffers": "1GB"},
+				},
+			}},
+	}}
+	h := newTestHandler(cs, func(ctx context.Context, cl *apiv1.Cluster) (PG, error) { return &fakePG{}, nil })
+	req := httptest.NewRequest("GET", "/api/clusters/pg1?ns=db", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var out clusterView
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.ImageName != "ghcr.io/cloudnative-pg/postgresql:17.4" {
+		t.Errorf("imageName = %q", out.ImageName)
+	}
+	if out.Storage == nil || out.Storage.Size != "10Gi" {
+		t.Errorf("storage = %+v", out.Storage)
+	}
+	if out.Resources == nil || out.Resources.Requests.CPU != "500m" || out.Resources.Requests.Memory != "1Gi" {
+		t.Errorf("resources = %+v", out.Resources)
+	}
+	if out.Postgres == nil || out.Postgres.Parameters["shared_buffers"] != "1GB" {
+		t.Errorf("postgres = %+v", out.Postgres)
+	}
+}
+
 func TestSPAFallback(t *testing.T) {
 	cs := &fakeStore{}
 	h := newTestHandler(cs, nil)
@@ -339,6 +385,19 @@ func TestAPINotFoundIsJSON(t *testing.T) {
 	}
 	if rec.Code != 404 {
 		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHealthz(t *testing.T) {
+	h := newTestHandler(&fakeStore{}, nil)
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "ok") {
+		t.Fatalf("expected ok in body, got %q", rec.Body.String())
 	}
 }
 

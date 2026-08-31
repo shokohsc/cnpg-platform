@@ -49,6 +49,11 @@ Access is cluster-wide; the app reads/writes secrets in any namespace a cluster 
    ```
 4. Mount `my-app-db.DATABASE_URL` as an env var in your workload.
 
+## Docs
+
+- `docs/design.md` — original architecture and API design
+- `docs/crd-management-design.md` — CRD management feature design
+
 ## Notes
 
 - Builds a static distroless image (~15 MB).

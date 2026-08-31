@@ -95,7 +95,7 @@ git add . && git commit -m "chore: scaffold cnpg-manager module"
 **Interfaces:**
 - Consumes: nothing from later tasks.
 - Produces:
-  - `kube.New(ctx) (*Client, error)` — in-cluster config with kubeconfig fallback
+  - `kube.New(ctx) (*Client, error)` — in-cluster config with kubeconfig fallback (implemented as `New() (*Client, error)` — the wiring in Tasks 2 and 6 uses the zero-context form)
   - `(*Client).ListClusters(ctx) ([]apiv1.Cluster, error)`
   - `(*Client).GetCluster(ctx, ns, name) (*apiv1.Cluster, error)`
   - `(*Client).ListBackups(ctx, ns, cluster) ([]apiv1.Backup, error)`

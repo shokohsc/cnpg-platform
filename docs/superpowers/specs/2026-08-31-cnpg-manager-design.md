@@ -85,7 +85,7 @@ For a given cluster, database, and role:
   secret (fall back to InsecureSkipVerify only when the CA secret is
   malformed — flagged in code).
 - Role passwords for app-managed roles are stored at provisioning time in a
-  Kubernetes secret `{cluster}-{db}-{role}` in the cluster's namespace so the
+  Kubernetes secret `{cluster}-{role}` in the cluster's namespace so the
   Connect modal can render a working URL for non-superuser roles. Superuser
   connections use the CNPG superuser secret. The password is returned to the
   caller exactly once, at creation.

@@ -14,7 +14,14 @@ import (
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"cnpg-manager/internal/kube"
 	"cnpg-manager/internal/pg"
+)
+
+// Compile-time guards: the concrete types must satisfy the web interfaces.
+var (
+	_ ClusterStore = (*kube.Client)(nil)
+	_ PG           = (*pg.Server)(nil)
 )
 
 //go:embed all:dist

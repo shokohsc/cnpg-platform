@@ -158,24 +158,23 @@ func (s *Server) ListRows(ctx context.Context, dbName, schema, table string, lim
 
 	rel := QuoteIdent(schema) + "." + QuoteIdent(table)
 	def := "SELECT * FROM " + rel + fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+	cmeta, err := listColumns(ctx, conn, schema, table)
+	if err != nil {
+		return nil, err
+	}
+
 	tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
-	out := &TableResult{}
+	out := &TableResult{Columns: cmeta}
 	rows, err := tx.Query(ctx, def)
 	if err != nil {
 		return nil, normalizePGErr(err)
 	}
 	defer rows.Close()
-
-	cmeta, err := listColumns(ctx, conn, schema, table)
-	if err != nil {
-		return nil, err
-	}
-	out.Columns = cmeta
 	for rows.Next() {
 		vals, err := rows.Values()
 		if err != nil {

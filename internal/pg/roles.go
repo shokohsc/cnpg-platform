@@ -61,7 +61,7 @@ func (s *Server) ListRoles(ctx context.Context) ([]RoleInfo, error) {
 		FROM pg_roles r
 		LEFT JOIN pg_auth_members am ON am.member = r.oid
 		LEFT JOIN pg_roles m ON m.oid = am.roleid
-		GROUP BY r.oid ORDER BY r.rolname`)
+		GROUP BY r.rolname, r.rolsuper, r.rolcanlogin, r.rolcreatedb, r.rolcreaterole, r.rolreplication ORDER BY r.rolname`)
 	if err != nil {
 		return nil, err
 	}

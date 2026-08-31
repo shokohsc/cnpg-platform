@@ -2,14 +2,18 @@ package kube
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -115,6 +119,137 @@ func (k *Client) DeleteSecret(ctx context.Context, ns, name string) error {
 		return nil
 	}
 	return err
+}
+
+const crdGroup = "postgresql.cnpg.io"
+const crdVersion = "v1"
+
+// CRD kinds supported by the generic layer, and whether each is cluster-scoped.
+var crdScoped = map[string]bool{
+	"ClusterImageCatalog": true,
+}
+
+func CRDNamespaced(kind string) bool {
+	_, ok := crdKinds[kind]
+	if !ok {
+		return false
+	}
+	return !crdScoped[kind]
+}
+
+var crdKinds = map[string]struct{}{
+	"Cluster": {}, "Backup": {}, "Database": {}, "DatabaseRole": {},
+	"Pooler": {}, "ScheduledBackup": {}, "ImageCatalog": {},
+	"ClusterImageCatalog": {}, "Publication": {}, "Subscription": {},
+}
+
+func CRDGVR(kind string) (schema.GroupVersionResource, error) {
+	if _, ok := crdKinds[kind]; !ok {
+		return schema.GroupVersionResource{}, fmt.Errorf("unsupported CRD kind: %s", kind)
+	}
+	return schema.GroupVersionResource{Group: crdGroup, Version: crdVersion, Resource: plural(kind)}, nil
+}
+
+func plural(kind string) string {
+	return strings.ToLower(kind) + "s"
+}
+
+// nsFor returns the namespace arg to pass to kube calls (empty for cluster-scoped kinds).
+func nsFor(kind, ns string) string {
+	if !CRDNamespaced(kind) {
+		return ""
+	}
+	return ns
+}
+
+func (k *Client) ListCRD(ctx context.Context, kind, ns string) ([]unstructured.Unstructured, error) {
+	gvr, err := CRDGVR(kind)
+	if err != nil {
+		return nil, err
+	}
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind + "List"})
+	opts := []client.ListOption{}
+	if n := nsFor(kind, ns); n != "" {
+		opts = append(opts, client.InNamespace(n))
+	}
+	if err := k.c.List(ctx, list, opts...); err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (k *Client) GetCRD(ctx context.Context, kind, ns, name string) (*unstructured.Unstructured, error) {
+	gvr, err := CRDGVR(kind)
+	if err != nil {
+		return nil, err
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind})
+	if err := k.c.Get(ctx, client.ObjectKey{Namespace: nsFor(kind, ns), Name: name}, obj); err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+func (k *Client) CreateCRD(ctx context.Context, kind, ns string, obj *unstructured.Unstructured) error {
+	gvr, err := CRDGVR(kind)
+	if err != nil {
+		return err
+	}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind})
+	if n := nsFor(kind, ns); n != "" {
+		obj.SetNamespace(n)
+	} else {
+		obj.SetNamespace("")
+	}
+	return k.c.Create(ctx, obj)
+}
+
+func (k *Client) UpdateCRD(ctx context.Context, kind, ns string, obj *unstructured.Unstructured) error {
+	gvr, err := CRDGVR(kind)
+	if err != nil {
+		return err
+	}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind})
+	if n := nsFor(kind, ns); n != "" {
+		obj.SetNamespace(n)
+	}
+	return k.c.Update(ctx, obj)
+}
+
+func (k *Client) DeleteCRD(ctx context.Context, kind, ns, name string) error {
+	gvr, err := CRDGVR(kind)
+	if err != nil {
+		return err
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind})
+	obj.SetNamespace(nsFor(kind, ns))
+	obj.SetName(name)
+	err = k.c.Delete(ctx, obj)
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+func (k *Client) PatchCRD(ctx context.Context, kind, ns, name string, patch map[string]any) error {
+	gvr, err := CRDGVR(kind)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(patch)
+	if err != nil {
+		return err
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind})
+	obj.SetName(name)
+	if n := nsFor(kind, ns); n != "" {
+		obj.SetNamespace(n)
+	}
+	return k.c.Patch(ctx, obj, client.RawPatch(types.MergePatchType, data))
 }
 
 func ClusterPort(cl *apiv1.Cluster) int32 {

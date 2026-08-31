@@ -7,6 +7,8 @@ import (
 	apiv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -86,5 +88,108 @@ func TestListBackupsFilter(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("expected 2 backups, got %d", len(got))
+	}
+}
+
+func TestCRDWhitelist(t *testing.T) {
+	for _, k := range []string{"Cluster", "Backup", "Database", "DatabaseRole", "Pooler",
+		"ScheduledBackup", "ImageCatalog", "ClusterImageCatalog", "Publication", "Subscription"} {
+		if !CRDNamespaced(k) && k != "ClusterImageCatalog" {
+			t.Fatalf("expected %s namespaced", k)
+		}
+		if CRDNamespaced("ClusterImageCatalog") {
+			t.Fatal("ClusterImageCatalog should be cluster-scoped")
+		}
+	}
+	if CRDNamespaced("Bogus") {
+		t.Fatal("bogus kind should not be namespaced-aware / should be absent")
+	}
+}
+
+func TestListCRDRoundTrip(t *testing.T) {
+	c := schemeBuilder()
+	k := &Client{c: c}
+	ctx := context.Background()
+	for _, name := range []string{"b1", "b2"} {
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "postgresql.cnpg.io", Version: "v1", Kind: "Backup"})
+		obj.SetName(name)
+		obj.SetNamespace("db")
+		if err := k.CreateCRD(ctx, "Backup", "db", obj); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := k.ListCRD(ctx, "Backup", "db")
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list %d err %v", len(list), err)
+	}
+	one, err := k.GetCRD(ctx, "Backup", "db", "b1")
+	if err != nil || one.GetName() != "b1" {
+		t.Fatalf("get err %v", err)
+	}
+	one.Object["spec"] = map[string]any{"method": "barmanObjectStore"}
+	if err := k.UpdateCRD(ctx, "Backup", "db", one); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := k.GetCRD(ctx, "Backup", "db", "b1")
+	if got.Object["spec"].(map[string]any)["method"] != "barmanObjectStore" {
+		t.Fatal("update did not persist spec")
+	}
+	if err := k.DeleteCRD(ctx, "Backup", "db", "b1"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := k.ListCRD(ctx, "Backup", "db")
+	if len(after) != 1 {
+		t.Fatalf("expected 1 after delete, got %d", len(after))
+	}
+}
+
+func TestListCRDClusterScoped(t *testing.T) {
+	c := schemeBuilder()
+	k := &Client{c: c}
+	ctx := context.Background()
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "postgresql.cnpg.io", Version: "v1", Kind: "ClusterImageCatalog"})
+	obj.SetName("cat")
+	// Default namespaced client: force all-namespaces list just exercises ns "". 
+	if err := k.CreateCRD(ctx, "ClusterImageCatalog", "", obj); err != nil {
+		t.Fatal(err)
+	}
+	list, err := k.ListCRD(ctx, "ClusterImageCatalog", "")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("cluster-scoped list %d err %v", len(list), err)
+	}
+}
+
+func TestListCRDInvalidKind(t *testing.T) {
+	c := schemeBuilder()
+	k := &Client{c: c}
+	if _, err := k.ListCRD(context.Background(), "Bogus", "db"); err == nil {
+		t.Fatal("expected error for invalid kind")
+	}
+}
+
+func TestPatchCRD(t *testing.T) {
+	c := schemeBuilder()
+	k := &Client{c: c}
+	ctx := context.Background()
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "postgresql.cnpg.io", Version: "v1", Kind: "Cluster"})
+	obj.SetName("pg")
+	obj.SetNamespace("db")
+	obj.Object["spec"] = map[string]any{"instances": int64(1), "imageName": "img:17"}
+	if err := k.CreateCRD(ctx, "Cluster", "db", obj); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.PatchCRD(ctx, "Cluster", "db", "pg", map[string]any{"spec": map[string]any{"instances": int64(3)}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := k.GetCRD(ctx, "Cluster", "db", "pg")
+	spec := got.Object["spec"].(map[string]any)
+	if spec["instances"] != int64(3) {
+		t.Fatalf("patch did not set instances: %v", spec["instances"])
+	}
+	if spec["imageName"] != "img:17" {
+		t.Fatalf("merge patch clobbered sibling field: %v", spec)
 	}
 }

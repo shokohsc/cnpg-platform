@@ -58,10 +58,6 @@ func QuoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-func QuoteLit(s string) string {
-	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
-}
-
 var systemDBs = map[string]bool{"postgres": true, "template0": true, "template1": true}
 
 // IsSystemDB reports whether name is a reserved PostgreSQL system database.

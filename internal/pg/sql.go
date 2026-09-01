@@ -17,15 +17,6 @@ type SQLResult struct {
 	RowCount int64    `json:"rowCount"`
 }
 
-func (s *Server) ExecIn(ctx context.Context, dbName, stmt string) (pgconn.CommandTag, error) {
-	conn, err := s.connForDB(ctx, dbName)
-	if err != nil {
-		return pgconn.CommandTag{}, err
-	}
-	defer conn.Close(ctx)
-	return conn.Exec(ctx, stmt)
-}
-
 func (s *Server) connForDB(ctx context.Context, dbName string) (*pgx.Conn, error) {
 	cfg := s.conn.Config()
 	cfg.Database = dbName

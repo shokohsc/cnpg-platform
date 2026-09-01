@@ -53,7 +53,6 @@ type ClusterStore interface {
 type PG interface {
 	ListDatabases(ctx context.Context) ([]pg.DBInfo, error)
 	ListRoles(ctx context.Context) ([]pg.RoleInfo, error)
-	RolePassword(ctx context.Context, name string) (string, error)
 	RunSQL(ctx context.Context, db, stmt string, readOnly bool) (*pg.SQLResult, error)
 	ListTables(ctx context.Context, db string) ([]pg.SchemaInfo, error)
 	ListRows(ctx context.Context, db, schema, table string, limit, offset int) (*pg.TableResult, error)

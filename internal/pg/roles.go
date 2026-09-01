@@ -56,12 +56,4 @@ func (s *Server) ListRoles(ctx context.Context) ([]RoleInfo, error) {
 	return out, nil
 }
 
-func (s *Server) RolePassword(ctx context.Context, name string) (string, error) {
-	var pass string
-	err := s.conn.QueryRow(ctx,
-		"SELECT COALESCE(rolpassword, '') FROM pg_authid WHERE rolname = $1", name).Scan(&pass)
-	if err != nil {
-		return "", normalizePGErr(err)
-	}
-	return pass, nil
-}
+

@@ -27,7 +27,6 @@ type fakePG struct {
 
 func (f *fakePG) ListDatabases(ctx context.Context) ([]pg.DBInfo, error) { return f.dbs, f.err }
 func (f *fakePG) ListRoles(ctx context.Context) ([]pg.RoleInfo, error)   { return nil, f.err }
-func (f *fakePG) RolePassword(ctx context.Context, name string) (string, error) { return "rolepw", nil }
 func (f *fakePG) RunSQL(ctx context.Context, db, stmt string, readOnly bool) (*pg.SQLResult, error) {
 	return &pg.SQLResult{Command: "SELECT", Rows: [][]any{{1}}}, nil
 }

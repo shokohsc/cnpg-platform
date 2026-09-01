@@ -20,15 +20,6 @@ func TestQuoteIdent(t *testing.T) {
 	}
 }
 
-func TestQuoteLit(t *testing.T) {
-	if got := QuoteLit(`O'Reilly`); got != `'O''Reilly'` {
-		t.Errorf("got %s", got)
-	}
-	if got := QuoteLit(`x`); got != `'x'` {
-		t.Errorf("got %s", got)
-	}
-}
-
 func TestSystemDatabase(t *testing.T) {
 	for _, d := range []string{"postgres", "template0", "template1"} {
 		if !systemDBs[d] {
